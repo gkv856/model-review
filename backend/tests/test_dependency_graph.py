@@ -4,7 +4,7 @@ import networkx as nx
 import pytest
 
 from tests.conftest import make_cell
-from dependency_graph import extract_refs, build_graph, get_terminal_cells
+from core.dependency_graph import extract_refs, build_graph, get_terminal_cells
 
 
 class TestExtractRefs:

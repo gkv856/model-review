@@ -4,7 +4,7 @@ import openpyxl
 import pytest
 
 from tests.conftest import make_cell
-from enricher import enrich_cell, enrich_cells, _find_section
+from analysis.enricher import enrich_cell, enrich_cells, _find_section
 
 
 def _make_wb(sheet_data: dict) -> openpyxl.Workbook:

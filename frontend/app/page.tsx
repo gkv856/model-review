@@ -43,7 +43,7 @@ export default function UploadPage() {
 
         {/* Footer note */}
         <p className="text-xs text-muted-foreground text-center">
-          Both files must be .xlsx — max 50MB each. No data is stored beyond the current session.
+          Both files must be .xlsx — max 150MB each. No data is stored beyond the current session.
         </p>
 
       </div>

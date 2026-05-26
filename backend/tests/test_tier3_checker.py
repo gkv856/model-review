@@ -3,8 +3,8 @@
 import networkx as nx
 
 from tests.conftest import make_cell
-from dependency_graph import build_graph
-from tier3_checker import (
+from core.dependency_graph import build_graph
+from analysis.tier3_checker import (
     check_divide_by_zero_risk,
     check_hardcoded_mid_chain,
     check_self_reference,

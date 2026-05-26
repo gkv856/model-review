@@ -7,8 +7,8 @@ import tempfile
 import openpyxl
 import pytest
 
-from map_parser import parse_map
-from parser import parse_model
+from core.map_parser import parse_map
+from core.model_parser import parse_model
 
 
 def _write_xlsx(sheet_data: dict[str, dict[str, object]]) -> str:

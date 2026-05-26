@@ -1,0 +1,2 @@
+sheet,cell,symbol,tier,issue_type,severity,description
+Sheet1,I10,S,1,broken_ref,WARNING,"Formula references cell(s) not found in the model: ('Sheet1', 'I8')."

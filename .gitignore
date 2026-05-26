@@ -56,3 +56,7 @@ desktop.ini
 
 # Temp pipeline files
 *.tmp
+
+
+# Pipeline outputs — logs, interim stage files (never commit)
+outputs/

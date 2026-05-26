@@ -4,7 +4,7 @@ import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 
 from tests.conftest import make_cell
-from llm_reviewer import (
+from llm.reviewer import (
     review_tier1,
     review_tier2,
     review_cross_section,
@@ -69,7 +69,7 @@ class TestReviewTier1:
         cells = [_enriched("A1"), _enriched("B1")]
         mock_issue = {"sheet": "Sheet1", "cell": "A1", "issue_type": "SIGN_ERROR", "severity": "CRITICAL"}
 
-        with patch("llm_reviewer.get_llm", return_value=_mock_llm_response([mock_issue])):
+        with patch("llm.reviewer.get_llm", return_value=_mock_llm_response([mock_issue])):
             issues, calls = await review_tier1(cells)
 
         assert calls >= 1
@@ -86,7 +86,7 @@ class TestReviewTier2:
         cells = [_enriched(f"A{i}") for i in range(5)]
         mock_issue = {"sheet": "Sheet1", "cell": "A1", "issue_type": "WRONG_OPERATOR", "severity": "WARNING"}
 
-        with patch("llm_reviewer.get_llm", return_value=_mock_llm_response([mock_issue])):
+        with patch("llm.reviewer.get_llm", return_value=_mock_llm_response([mock_issue])):
             issues, calls = await review_tier2(cells)
 
         assert calls == 1   # 5 cells fits in one batch of 50
@@ -107,7 +107,7 @@ class TestReviewCrossSection:
         terminals = [_enriched("A1", is_terminal=True), _enriched("B1", is_terminal=True)]
         mock_issue = {"sheet": "Sheet1", "cell": "A1", "issue_type": "CROSS_SECTION_INCONSISTENCY", "severity": "WARNING"}
 
-        with patch("llm_reviewer.get_llm", return_value=_mock_llm_response([mock_issue])):
+        with patch("llm.reviewer.get_llm", return_value=_mock_llm_response([mock_issue])):
             issues, calls = await review_cross_section(terminals)
 
         assert calls == 1
@@ -119,7 +119,7 @@ class TestRunLlmReview:
         t1 = [_enriched("A1", is_terminal=True)]
         t2 = [_enriched("B1")]
 
-        with patch("llm_reviewer.get_llm", return_value=_mock_llm_response([])):
+        with patch("llm.reviewer.get_llm", return_value=_mock_llm_response([])):
             result = await run_llm_review(t1, t2)
 
         assert "issues" in result
@@ -135,8 +135,8 @@ class TestRunLlmReview:
         mock_response.content = '{"issues": []}'
         mock_llm.ainvoke = AsyncMock(side_effect=[Exception("timeout"), mock_response])
 
-        with patch("llm_reviewer.get_llm", return_value=mock_llm):
-            with patch("llm_reviewer.asyncio.sleep", new_callable=AsyncMock):
+        with patch("llm.reviewer.get_llm", return_value=mock_llm):
+            with patch("llm.reviewer.asyncio.sleep", new_callable=AsyncMock):
                 issues, calls = await review_tier1(cells)
 
         assert calls == 1   # completed on retry

@@ -3,8 +3,8 @@
 import networkx as nx
 
 from tests.conftest import make_cell, make_graph
-from dependency_graph import build_graph
-from auto_flagger import flag_x_in_chain, flag_circular_refs, flag_broken_refs, auto_flag
+from core.dependency_graph import build_graph
+from analysis.auto_flagger import flag_x_in_chain, flag_circular_refs, flag_broken_refs, auto_flag
 
 
 class TestFlagXInChain:

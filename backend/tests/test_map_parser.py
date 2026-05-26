@@ -7,7 +7,7 @@ import io
 import pytest
 import openpyxl
 
-from map_parser import parse_map, symbol_counts, VALID_SYMBOLS
+from core.map_parser import parse_map, symbol_counts, VALID_SYMBOLS
 
 
 def _make_map_xlsx(sheet_data: dict[str, dict[str, str]]) -> str:

@@ -1,6 +1,6 @@
 """Tests for propagator.py"""
 
-from propagator import propagate_findings
+from reporting.propagator import propagate_findings
 
 
 def _issue(sheet: str = "Sheet1", cell: str = "A1") -> dict:

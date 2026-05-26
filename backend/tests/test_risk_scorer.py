@@ -3,8 +3,8 @@
 import networkx as nx
 
 from tests.conftest import make_cell, make_graph
-from dependency_graph import build_graph
-from risk_scorer import score_cell, score_cells
+from core.dependency_graph import build_graph
+from core.risk_scorer import score_cell, score_cells
 
 
 class TestScoreCell:

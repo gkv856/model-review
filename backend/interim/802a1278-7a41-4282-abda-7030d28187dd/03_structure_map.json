@@ -1,0 +1,15 @@
+{
+  "Sheet1": {
+    "sheet": "Sheet1",
+    "timeline_row": null,
+    "label_col": "D",
+    "unit_col": null,
+    "data_start_col": "E",
+    "section_headers": [
+      {
+        "row": 4,
+        "label": "P&L"
+      }
+    ]
+  }
+}

@@ -1,7 +1,7 @@
 """Tests for deduplicator.py"""
 
 from tests.conftest import make_cell
-from deduplicator import normalise_formula, deduplicate_by_pattern
+from analysis.deduplicator import normalise_formula, deduplicate_by_pattern
 
 
 class TestNormaliseFormula:

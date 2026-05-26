@@ -1,7 +1,7 @@
 """Tests for tier_assigner.py"""
 
 from tests.conftest import make_cell
-from tier_assigner import assign_tiers
+from core.tier_assigner import assign_tiers
 
 
 def _make_scored_cells(scores: list[float], symbol: str = "F") -> list[dict]:

@@ -4,7 +4,7 @@ import tempfile
 import openpyxl
 import pytest
 
-from structure_detector import detect_structure
+from core.structure_detector import detect_structure
 
 
 def _make_wb(sheet_data: dict[str, dict[str, object]]) -> openpyxl.Workbook:

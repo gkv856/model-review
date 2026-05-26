@@ -1,7 +1,7 @@
 """Tests for report_generator.py"""
 
 from tests.conftest import make_cell
-from report_generator import build_json_report, build_html_report
+from reporting.generator import build_json_report, build_html_report
 
 
 def _make_cells():

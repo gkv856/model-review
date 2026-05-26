@@ -1,8 +1,5 @@
 import type { IReport, IReviewResp, IStatusResp } from "@/lib/types";
 
-// API base URL from env — falls back to localhost for local dev
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-
 interface IApiConfig {
   baseUrl: string;
   streaming: boolean;

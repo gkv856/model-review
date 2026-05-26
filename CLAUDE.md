@@ -45,26 +45,40 @@ model-review/
 │   └── providers/
 │       └── QueryProvider.tsx  React Query "use client" provider
 │
-└── backend/           Python FastAPI pipeline
-    ├── map_parser.py          Step 0 ✅
-    ├── parser.py              Step 1 ✅
-    ├── structure_detector.py  Step 2 ✅
-    ├── dependency_graph.py    Step 3 ✅
-    ├── risk_scorer.py         Step 4 ✅
-    ├── tier_assigner.py       Step 5 ✅
-    ├── auto_flagger.py        Step 6 ✅
-    ├── tier3_checker.py       Step 7 ✅
-    ├── deduplicator.py        Step 8 ✅
-    ├── enricher.py            Step 9 ✅
-    ├── llm_reviewer.py        Step 10 ✅
-    ├── propagator.py          Step 11 ✅
-    ├── report_generator.py    Step 12 ✅
-    ├── main.py                Step 13 ✅ (FastAPI wiring)
-    ├── llm_provider.py        ✅ LangChain factory (Anthropic/OpenAI/Gemini)
-    ├── utils.py               ✅ Shared utilities (make_issue, col_letter, chunked, parse_llm_json)
-    ├── pytest.ini             asyncio_mode = auto
+└── backend/           Python FastAPI pipeline (refactored into logical packages)
+    ├── main.py                Entry point — re-exports app from api/app.py
+    ├── pytest.ini             asyncio_mode = auto, pythonpath = .
     ├── requirements.txt
     ├── .env.example
+    ├── utils/                 Shared utilities
+    │   ├── __init__.py        Re-exports all helpers + get_logger
+    │   ├── helpers.py         make_issue, chunked, col_letter, parse_llm_json
+    │   └── logger.py          get_logger() — RotatingFileHandler + console, logs/app.log
+    ├── core/                  Steps 0–5: parsing, graph, scoring, tiering
+    │   ├── map_parser.py      Step 0 ✅ parse_map, symbol_counts
+    │   ├── model_parser.py    Step 1 ✅ parse_model
+    │   ├── structure_detector.py  Step 2 ✅ detect_structure (parallel per-sheet)
+    │   ├── dependency_graph.py    Step 3 ✅ build_graph (parallel node metrics)
+    │   ├── risk_scorer.py         Step 4 ✅ score_cells (parallel chunks)
+    │   └── tier_assigner.py       Step 5 ✅ assign_tiers
+    ├── analysis/              Steps 6–9: flagging, rule checks, dedup, enrichment
+    │   ├── auto_flagger.py    Step 6 ✅ auto_flag (x_in_chain, circular, broken_ref)
+    │   ├── tier3_checker.py   Step 7 ✅ run_tier3_checks (5 rule checks)
+    │   ├── deduplicator.py    Step 8 ✅ deduplicate_by_pattern, normalise_formula
+    │   └── enricher.py        Step 9 ✅ enrich_cells (label, units, period, section)
+    ├── llm/                   Steps 10: LLM provider + reviewer
+    │   ├── provider.py        get_llm() — Anthropic / OpenAI / Gemini via env var
+    │   └── reviewer.py        Step 10 ✅ run_llm_review (tier1, tier2, cross-section)
+    ├── reporting/             Steps 11–12: propagation + report generation
+    │   ├── propagator.py      Step 11 ✅ propagate_findings
+    │   └── generator.py       Step 12 ✅ build_json_report, build_html_report
+    ├── pipeline/              Orchestration + interim file output
+    │   ├── runner.py          Full pipeline runner (called by api/routes.py)
+    │   └── interim.py         Writes CSV/JSON per stage to interim/{job_id}/
+    ├── api/                   FastAPI app
+    │   ├── app.py             FastAPI app factory, CORS setup
+    │   ├── routes.py          POST /review, GET /status, GET /report
+    │   └── job_store.py       In-memory JOB_STORE dict
     └── tests/
         ├── conftest.py        make_cell(), make_graph(), make_xlsx fixture, make_wb fixture
         ├── test_map_parser.py      ✅ 8 tests
@@ -82,9 +96,14 @@ model-review/
         └── test_report_generator.py   ✅ 9 tests
 ```
 
-**Test suite status: 127/127 passing** (all steps complete).
+**Test suite status: 127/127 passing** (all steps complete, refactored package structure).
 
 Run tests: `cd backend && .venv/Scripts/pytest tests/ -v`
+
+Start server: `uvicorn main:app --reload --port 8000` (or `uvicorn api.app:app --reload --port 8000`)
+
+Interim files written per job to: `backend/interim/{job_id}/01_map_parsed.csv` … `12_propagated_issues.csv`
+Log file: `backend/logs/app.log` (RotatingFileHandler, 10MB × 5 backups)
 
 ---
 

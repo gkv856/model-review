@@ -1,0 +1,3 @@
+sheet,cell,symbol,tier,label,units,period,section,formula,value
+Sheet1,I10,S,1,EBITDA,,,P&L,=SUM(I7:I9),400
+Sheet1,J5,F,2,Quantity,,,P&L,=I5*1.1,11
