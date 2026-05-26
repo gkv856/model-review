@@ -167,6 +167,22 @@ def _run_pipeline(job_id: str, model_path: str, map_path: str,
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 
+@app.get("/")
+async def root():
+    return {
+        "status": "running",
+        "service": "Financial Model Integrity Reviewer",
+        "version": "1.0.0",
+        "endpoints": {
+            "POST /review":              "Upload model.xlsx + map.xlsx to start a review job",
+            "GET  /status/{job_id}":     "Poll job progress (status, progress %, current step)",
+            "GET  /report/{job_id}":     "Fetch full JSON report (job must be completed)",
+            "GET  /report/{job_id}/html":"Fetch standalone HTML report (job must be completed)",
+            "GET  /health":              "Health check",
+        },
+    }
+
+
 @app.post("/review")
 async def submit_review(
     background_tasks: BackgroundTasks,
