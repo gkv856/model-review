@@ -119,14 +119,29 @@ Open [http://localhost:3000](http://localhost:3000), upload your model and map f
 
 Set `LLM_PROVIDER` in `backend/.env`. No restart needed between jobs — the provider is read per-request.
 
-| Provider       | `LLM_PROVIDER` | Default model              | API key required    |
-| -------------- | -------------- | -------------------------- | ------------------- |
-| Ollama (local) | `ollama`       | `gemma3:12b`               | No                  |
-| Anthropic      | `anthropic`    | `claude-sonnet-4-20250514` | `ANTHROPIC_API_KEY` |
-| OpenAI         | `openai`       | `gpt-4o`                   | `OPENAI_API_KEY`    |
-| Google Gemini  | `gemini`       | `gemini-2.0-flash`         | `GOOGLE_API_KEY`    |
+| Provider                  | `LLM_PROVIDER` | `MODEL_NAME`               | Credentials required                                                 |
+| ------------------------- | -------------- | -------------------------- | -------------------------------------------------------------------- |
+| Ollama (local)            | `ollama`       | `gemma3:12b`               | None — runs locally                                                  |
+| Anthropic                 | `anthropic`    | `claude-sonnet-4-20250514` | `ANTHROPIC_API_KEY`                                                  |
+| OpenAI                    | `openai`       | `gpt-4o`                   | `OPENAI_API_KEY`                                                     |
+| Azure OpenAI / AI Foundry | `azure`        | your deployment name       | `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_VERSION` |
+| Google Gemini             | `gemini`       | `gemini-2.0-flash`         | `GOOGLE_API_KEY`                                                     |
 
-Override the model with `MODEL_NAME=gemma3:27b` (or any model from `ollama list`).
+Override the default model name with `MODEL_NAME=...`. For Azure, `MODEL_NAME` is the **deployment name** shown in your Azure AI Foundry project or Azure OpenAI resource.
+
+### Azure AI Foundry setup
+
+1. In [Azure AI Foundry](https://ai.azure.com), open your project → **Overview** → copy the **Azure OpenAI** endpoint URI.
+2. Under **API keys**, copy a key.
+3. Deploy a model (e.g. `gpt-4o`) — note the **deployment name** you chose.
+4. In `backend/.env`:
+```env
+LLM_PROVIDER=azure
+MODEL_NAME=your-deployment-name
+AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com/
+AZURE_OPENAI_API_KEY=...
+AZURE_OPENAI_API_VERSION=2024-12-01-preview
+```
 
 ### Ollama setup
 

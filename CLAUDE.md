@@ -212,7 +212,7 @@ From `.claude/gkv-coding-style.md`:
 
 ## LLM Provider Setup
 
-`llm_provider.py` returns a `BaseChatModel` based on `LLM_PROVIDER` env var:
+`llm/provider.py` returns a `BaseChatModel` based on `LLM_PROVIDER` env var. Supported values: `anthropic`, `openai`, `azure`, `gemini`, `ollama`.
 
 ```python
 from llm_provider import get_llm
@@ -223,10 +223,14 @@ response = await llm.ainvoke(messages)   # LangChain unified interface
 Defaults:
 
 - `anthropic` → `claude-sonnet-4-20250514`
-- `openai` → `gpt-4o`
-- `gemini` → `gemini-2.0-flash`
+- `openai`    → `gpt-4o`
+- `azure`     → `gpt-4o` (set `MODEL_NAME` to your deployment name)
+- `gemini`    → `gemini-2.0-flash`
+- `ollama`    → `gemma3:12b`
 
-Override with `MODEL_NAME` env var.
+For `azure`, three additional env vars are required: `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_VERSION`. Uses `AzureChatOpenAI` from `langchain-openai` (no extra package needed). `MODEL_NAME` maps to `azure_deployment`.
+
+Override model with `MODEL_NAME` env var.
 
 ---
 

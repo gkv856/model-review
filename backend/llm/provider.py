@@ -1,6 +1,6 @@
 """
 LangChain LLM factory — swap provider via LLM_PROVIDER env var.
-Supported: anthropic (default), openai, gemini, ollama
+Supported: anthropic (default), openai, gemini, ollama, azure
 """
 
 import os
@@ -10,11 +10,11 @@ from langchain_core.language_models.chat_models import BaseChatModel
 
 def get_llm() -> BaseChatModel:
     """
-    Input:  LLM_PROVIDER, MODEL_NAME, and API key from environment
+    Input:  LLM_PROVIDER, MODEL_NAME, and provider-specific vars from environment
     Output: configured LangChain chat model ready for .invoke() / .ainvoke()
 
-    For ollama, set LLM_PROVIDER=ollama. No API key required.
-    OLLAMA_BASE_URL defaults to http://localhost:11434.
+    For azure, MODEL_NAME is the deployment name. Required env vars:
+      AZURE_OPENAI_API_KEY, AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_API_VERSION
     """
     provider    = os.getenv("LLM_PROVIDER", "anthropic").lower()
     model       = os.getenv("MODEL_NAME", _default_model(provider))
@@ -36,6 +36,23 @@ def get_llm() -> BaseChatModel:
             api_key=os.getenv("OPENAI_API_KEY"),
         )
 
+    if provider == "azure":
+        from langchain_openai import AzureChatOpenAI
+        endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
+        api_key  = os.getenv("AZURE_OPENAI_API_KEY")
+        version  = os.getenv("AZURE_OPENAI_API_VERSION", "2024-12-01-preview")
+        if not endpoint:
+            raise ValueError("AZURE_OPENAI_ENDPOINT must be set when LLM_PROVIDER=azure")
+        if not api_key:
+            raise ValueError("AZURE_OPENAI_API_KEY must be set when LLM_PROVIDER=azure")
+        return AzureChatOpenAI(
+            azure_deployment=model,
+            azure_endpoint=endpoint,
+            api_key=api_key,
+            api_version=version,
+            temperature=temperature,
+        )
+
     if provider == "gemini":
         from langchain_google_genai import ChatGoogleGenerativeAI
         return ChatGoogleGenerativeAI(
@@ -53,7 +70,8 @@ def get_llm() -> BaseChatModel:
         )
 
     raise ValueError(
-        f"Unknown LLM_PROVIDER '{provider}'. Supported: anthropic, openai, gemini, ollama"
+        f"Unknown LLM_PROVIDER '{provider}'. "
+        f"Supported: anthropic, openai, azure, gemini, ollama"
     )
 
 
@@ -61,6 +79,7 @@ def _default_model(provider: str) -> str:
     defaults = {
         "anthropic": "claude-sonnet-4-20250514",
         "openai":    "gpt-4o",
+        "azure":     "gpt-4o",
         "gemini":    "gemini-2.0-flash",
         "ollama":    "gemma3:12b",
     }
