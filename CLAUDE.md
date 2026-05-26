@@ -21,13 +21,17 @@ The dependency graph is the primary analysis engine. The LLM only sees high-risk
 model-review/
 ├── frontend/          Next.js 16+ App Router (dark mode, shadcn/ui v4, TanStack Query v5)
 │   ├── app/
-│   │   ├── page.tsx                     Upload page
-│   │   ├── results/[jobId]/page.tsx     Results + download
+│   │   ├── page.tsx                               Upload page + previous runs list
+│   │   ├── results/[jobId]/page.tsx               Full JSON report + HTML download
+│   │   ├── results/[jobId]/pipeline/page.tsx      Pipeline Inspector (stage-by-stage live view)
 │   │   └── api/
-│   │       ├── review/route.ts          POST proxy → FastAPI
-│   │       ├── status/[jobId]/route.ts  GET proxy
-│   │       ├── report/[jobId]/route.ts  GET JSON proxy
-│   │       └── report/[jobId]/html/route.ts  GET HTML proxy
+│   │       ├── review/route.ts                    POST proxy → FastAPI
+│   │       ├── status/[jobId]/route.ts            GET proxy
+│   │       ├── report/[jobId]/route.ts            GET JSON proxy
+│   │       ├── report/[jobId]/html/route.ts       GET HTML proxy
+│   │       ├── interim/route.ts                   GET /interim — list all past job folders
+│   │       ├── interim/[jobId]/route.ts           GET /interim/{job_id} — list stage files
+│   │       └── interim/[jobId]/[filename]/route.ts  GET /interim/{job_id}/{filename}
 │   ├── components/
 │   │   ├── DualFileUpload.tsx
 │   │   ├── IssuesTable.tsx
@@ -35,15 +39,17 @@ model-review/
 │   │   ├── TierBreakdown.tsx
 │   │   └── ProgressIndicator.tsx
 │   ├── hooks/
-│   │   ├── useReview.ts       useMutation → submits files, navigates to /results/{jobId}
-│   │   ├── useJobStatus.ts    polls /status every 3s, stops at completed/failed
-│   │   └── useReport.ts       fetches when enabled=true (after completion)
+│   │   ├── useReview.ts         useMutation → submits files, navigates to /results/{jobId}/pipeline
+│   │   ├── useJobStatus.ts      polls /status every 3s, stops at completed/failed
+│   │   ├── useReport.ts         fetches when enabled=true (after completion)
+│   │   └── usePipelineData.ts   polls /interim/{jobId} every 2s, fetches each stage file once ready
 │   ├── lib/
-│   │   ├── api.ts             ModelReviewApi class (streaming flag, SSE support)
-│   │   ├── types.ts           All shared TS types
-│   │   └── utils.ts           Shared utility functions
+│   │   ├── api.ts               ModelReviewApi class
+│   │   ├── types.ts             All shared TS types
+│   │   ├── utils.ts             Shared utility functions
+│   │   └── pipelineSteps.ts     Step definitions, CSV/JSON parsers, per-step aggregation logic
 │   └── providers/
-│       └── QueryProvider.tsx  React Query "use client" provider
+│       └── QueryProvider.tsx    React Query "use client" provider
 │
 └── backend/           Python FastAPI pipeline (refactored into logical packages)
     ├── main.py                Entry point — re-exports app from api/app.py
@@ -102,7 +108,9 @@ Run tests: `cd backend && .venv/Scripts/pytest tests/ -v`
 
 Start server: `uvicorn main:app --reload --port 8000` (or `uvicorn api.app:app --reload --port 8000`)
 
-Interim files written per job to: `backend/interim/{job_id}/01_map_parsed.csv` … `12_propagated_issues.csv`
+Interim files written per job to: `backend/outputs/interim/{job_id}/00_meta.json` … `12_propagated_issues.csv`
+- `00_meta.json` written immediately on job submission (before pipeline starts) — survives backend restarts
+- `11_llm_prompts.json` written after Step 10 — contains exact system prompt, user prompt, and raw LLM response per batch
 Log file: `backend/logs/app.log` (RotatingFileHandler, 10MB × 5 backups)
 
 ---
@@ -133,212 +141,28 @@ All implemented with tests. Key design facts:
 
 ---
 
-### Step 7: `tier3_checker.py` (NEXT TO BUILD)
+### Steps 7–12 (DONE)
 
-Five deterministic rule checks for Tier 3 cells only. No LLM. Each check function returns `dict | None`.
+All steps fully implemented and tested. Key implementation notes:
 
-```python
-def run_tier3_checks(cells: list[dict], G: nx.DiGraph) -> list[dict]:
-    issues = []
-    tier3 = [c for c in cells if c.get("tier") == 3]
-    for cell in tier3:
-        for check_fn in RULE_CHECKS:
-            result = check_fn(cell, G)
-            if result:
-                issues.append(result)
-    return issues
-```
+**Step 7 — `tier3_checker.py`:** Five deterministic rule checks for Tier 3 cells (divide-by-zero risk, hardcoded mid-chain, self-reference, empty sum range, unit mismatch heuristic). Uses `make_issue()` from `utils.py`.
 
-**The five checks:**
+**Step 8 — `deduplicator.py`:** `normalise_formula` strips cross-sheet refs (quoted + bare), ranges, cell refs, numeric constants. `deduplicate_by_pattern` groups by `(symbol, normalised_formula)`, returns highest-`risk_score` representative per group. Sets `pattern_instances` and `pattern_instance_count` on representative.
 
-1. `check_divide_by_zero_risk` — formula contains `/` AND any direct predecessor has `value == 0` or `value` near-zero (`abs(v) < 1e-9`). Severity: WARNING.
+**Step 9 — `enricher.py`:** Adds `label`, `units`, `period`, `section`, `dependencies` to each representative from the structure map + `data_only=True` workbook.
 
-2. `check_hardcoded_mid_chain` — cell has at least one direct predecessor whose `symbol == "N"` AND the cell itself has at least one dependent (not a terminal node). A hardcoded value feeding into a formula chain is fragile. Severity: WARNING.
+**Step 10 — `llm/reviewer.py`:** Three async passes — `review_tier1` (batch 20, grouped by sheet+section), `review_tier2` (batch 50, formula+label only), `review_cross_section` (single call on terminal cells). `_call_llm_with_retry` returns `(issues, raw_response_text)`. Each batch produces a prompt record written to `11_llm_prompts.json` containing `system_prompt`, `user_prompt`, and `raw_response`. `run_llm_review` returns `{"issues": [...], "llm_calls": N, "prompts": [...]}`.
 
-3. `check_self_reference` — cell's own `(sheet, cell)` appears in its `raw_dependencies`. Severity: CRITICAL.
+**Step 11 — `reporting/propagator.py`:** `propagate_findings` sets `instance_count` on each issue by looking up its representative's `pattern_instances`.
 
-4. `check_empty_sum_range` — symbol == "S" AND the cell's computed `value` is 0 or None AND all direct predecessor values are also 0 or None. May indicate summing an empty range. Severity: INFO.
+**Step 12 — `reporting/generator.py`:** `build_json_report` assembles the full structured report. `build_html_report` produces a standalone single-file HTML with no CDN dependencies.
 
-5. `check_unit_mismatch_heuristic` — cell has a `units` field (from enrichment — skip if absent). If the cell's units differ from the majority units of its direct predecessors, flag it. Only run if `units` is populated. Severity: WARNING.
+**API (`api/routes.py`):** In addition to the core routes, three `/interim` endpoints serve stage files without requiring JOB_STORE (works after backend restart):
+- `GET /interim` — lists all job folders, reads `00_meta.json` for model filename + start time
+- `GET /interim/{job_id}` — lists stage files with sizes
+- `GET /interim/{job_id}/{filename}` — serves a single CSV or JSON file
 
-Use `make_issue()` from `utils.py` for all issue dicts.
-
-**Tests to write:** One test per check function (positive + negative case each). Use `make_cell()` and `build_graph()` from conftest.
-
----
-
-### Step 8: `deduplicator.py`
-
-Two functions. Both operate only on Tier 1 + Tier 2 cells.
-
-```python
-def normalise_formula(formula: str) -> str:
-    # 1. Uppercase
-    # 2. Strip cross-sheet refs: 'SheetName'!A1 → XSHEET!REF
-    # 3. Strip ranges: A1:B5 → RANGE
-    # 4. Strip cell refs: A1 → REF
-    # 5. Strip numeric constants: 0.3 → CONST
-    # Returns structural pattern string
-
-def deduplicate_by_pattern(cells: list[dict]) -> list[dict]:
-    # Groups by (symbol, normalise_formula(formula))
-    # Returns one representative per group: highest risk_score cell
-    # Sets on representative: pattern_instances=[other cell coords], pattern_instance_count=N
-    # Cells with no formula get their own group (normalised to "")
-```
-
-**Important:** Cross-sheet ref regex must handle both quoted (`'P&L'!F15`) and bare (`Sheet2!C10`) forms. Strip both before applying range/cell patterns to avoid double-matching.
-
-**Tests:** Verify normalisation output for a few known inputs. Verify deduplication groups identical patterns. Verify representative is highest-scoring cell.
-
----
-
-### Step 9: `enricher.py`
-
-Run on deduplicated representatives only (Tier 1 + 2). Adds label, units, period, section, and dependency details. Requires the structure map from `structure_detector.py` and the `data_only=True` workbook.
-
-```python
-def enrich_cell(cell: dict, structure_map: dict, wb_values) -> dict:
-    # Returns new dict merging cell + {label, units, period, section, dependencies}
-
-def enrich_cells(cells: list[dict], structure_map: dict, wb_values) -> list[dict]:
-    # Applies enrich_cell to each, returns same list (mutates in place)
-```
-
-**Label lookup:** `structure_map[sheet]["label_col"]` → read that column at cell's row. Fall back to `f"Row {row}"` if None.
-
-**Period lookup:** `structure_map[sheet]["timeline_row"]` → read that row at cell's column. May be None.
-
-**Section lookup:** Walk `structure_map[sheet]["section_headers"]` in reverse row order. First header with `header["row"] <= cell["row"]` is the section. Fall back to `"General"`.
-
-**Dependencies:** For each `(dep_sheet, dep_coord)` in `raw_dependencies`, look up its label (same label_col logic) and its computed value from `wb_values[dep_sheet][dep_coord].value`.
-
----
-
-### Step 10: `llm_reviewer.py`
-
-LangChain-based async reviewer. Uses `get_llm()` from `llm_provider.py`. Operates on enriched representatives from Tiers 1 and 2.
-
-```python
-async def review_tier1(cells: list[dict]) -> list[dict]:
-    # Batch size 20, grouped by sheet+section first
-    # Full enriched prompt — see system prompt in PRD §Step 10
-
-async def review_tier2(cells: list[dict]) -> list[dict]:
-    # Batch size 50
-    # Lightweight prompt — formula + label + symbol only
-
-async def review_cross_section(terminal_cells: list[dict]) -> list[dict]:
-    # Single call with all terminal cells
-    # Checks sign flips, unit changes, missing bridges between sections
-
-async def run_llm_review(
-    tier1_reps: list[dict],
-    tier2_reps: list[dict],
-) -> list[dict]:
-    # Orchestrates all three passes, returns combined issues list
-```
-
-**Prompts:** Define as module-level string constants, not inline. See PRD §Step 10 for exact prompt text.
-
-**LLM call pattern:**
-
-```python
-llm = get_llm()
-messages = [SystemMessage(content=SYSTEM_PROMPT), HumanMessage(content=user_prompt)]
-response = await llm.ainvoke(messages)
-issues = parse_llm_json(response.content)  # from utils.py
-```
-
-`parse_llm_json` in `utils.py` strips markdown fences and parses the `issues` array.
-
-**Retry:** On exception, retry once with a 2-second wait. On second failure, log and skip batch (do not crash pipeline).
-
-**LLM call count tracking:** Return a dict `{"issues": [...], "llm_calls": N}` or track via a counter passed in.
-
----
-
-### Step 11: `propagator.py`
-
-```python
-def propagate_findings(issues: list[dict], representatives: list[dict]) -> list[dict]:
-    # For each issue, find its representative cell
-    # Set issue["instances"] = [issue["cell"]] + rep["pattern_instances"]
-    # Set issue["instance_count"] = len(instances)
-    # Return same list (mutates in place)
-```
-
-Simple lookup by `(sheet, cell)` match against the representatives list. If no match, `instances = [cell]`, `instance_count = 1`.
-
----
-
-### Step 12: `report_generator.py`
-
-```python
-def build_json_report(
-    job_id: str,
-    model_filename: str,
-    map_filename: str,
-    cells: list[dict],
-    issues: list[dict],
-    auto_issues: list[dict],
-    llm_calls_made: int,
-    patterns_reviewed: int,
-) -> dict:
-    # Assembles the full JSON report structure per PRD §Step 12
-    # summary: total_ufs, symbol_breakdown, tier_breakdown, llm_calls_made,
-    #          patterns_reviewed, total_issues, critical, warning, info, cells_affected_by_issues
-    # graph_analysis: circular_references, broken_references, external_links_in_chain, hardcoded_mid_chain
-    # issues: combined + sorted by severity (CRITICAL → WARNING → INFO), then tier
-
-def build_html_report(report: dict) -> str:
-    # Standalone single-file HTML — NO CDN DEPENDENCIES
-    # Embed all CSS inline in <style> tags
-    # Embed all JS inline in <script> tags
-    # Features: sortable/filterable issues table, expandable instances, collapsible graph section
-    # Print-ready, neutral dark styling
-```
-
----
-
-### Step 13: `main.py`
-
-FastAPI app with background task pipeline and in-memory job store.
-
-```python
-# Job states
-JOB_STORE: dict[str, dict] = {}
-# job = { "status": "pending"|"running"|"completed"|"failed",
-#          "progress": 0-100, "step": str, "error": str|None,
-#          "report": dict|None }
-
-# Routes
-POST /review          — accepts multipart (model_file, map_file), starts background task, returns {job_id}
-GET  /status/{job_id} — returns {job_id, status, progress, step, error}
-GET  /report/{job_id} — returns full JSON report
-GET  /report/{job_id}/html — returns HTML report string
-
-# Pipeline steps with progress %:
-# 0  map_parser        5%
-# 1  parser           10%
-# 2  structure_detect 20%
-# 3  build_graph      30%
-# 4  risk_scorer      40%
-# 5  tier_assigner    45%
-# 6  auto_flagger     50%
-# 7  tier3_checker    55%
-# 8  deduplicator     60%
-# 9  enricher         65%
-# 10 llm_review       85%  (longest step)
-# 11 propagator       90%
-# 12 report_gen      100%
-```
-
-**File handling:** Save uploaded files to `tempfile.mkdtemp()`, clean up after pipeline completes or fails.
-
-**Error handling:** Any unhandled exception in background task → set `status = "failed"`, `error = str(e)`, log traceback.
-
-**CORS:** Allow `http://localhost:3000` in dev. Use env var `ALLOWED_ORIGINS` for prod.
+`write_metadata(job_id, ...)` is called immediately at submission before the background task starts, so `00_meta.json` always exists even for failed/incomplete jobs.
 
 ---
 
@@ -446,12 +270,13 @@ Never call the FastAPI server directly from browser components.
 
 ---
 
-## Backend — COMPLETE
+## Status — COMPLETE
 
-All 13 pipeline steps implemented and tested. **127/127 tests passing.**
+**Backend:** All 13 pipeline steps implemented and tested. **127/127 tests passing.**
 
-## What's Next
-
-- End-to-end test with a real small model (100 UFs) + map file pair
-- Set up `.env` with API keys, run `uvicorn main:app --reload --port 8000`, then `npm run dev` in frontend
-- Verify frontend renders results correctly against real API responses
+**Frontend:** Fully functional.
+- Upload page with previous runs list (reads `00_meta.json` from each job folder)
+- Pipeline Inspector (`/results/[jobId]/pipeline`) — two-column layout, live stage-by-stage view, executive summary panel, per-step explanation toggles, real-time progress bar driven by `status.progress`, independent left/right scroll regions
+- Step 11 detail panel has a dedicated "LLM Prompts" tab showing system prompt, user prompt, and raw LLM response per batch
+- Full report page (`/results/[jobId]`) with JSON download and HTML report
+- After submission, navigates directly to Pipeline Inspector
