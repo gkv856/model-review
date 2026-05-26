@@ -2,7 +2,7 @@
 
 import { use, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Download, ArrowLeft, AlertTriangle, ChevronDown, ChevronRight } from "lucide-react";
+import { Download, ArrowLeft, AlertTriangle, ChevronDown, ChevronRight, BarChart2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import SummaryCard from "@/components/SummaryCard";
@@ -94,18 +94,28 @@ export default function ResultsPage(props: IPageProps) {
             Review another model
           </button>
 
-          {isCompleted && (
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={handleDownloadJson}>
-                <Download className="w-3.5 h-3.5 mr-1.5" />
-                JSON Report
-              </Button>
-              <Button variant="outline" size="sm" onClick={handleDownloadHtml}>
-                <Download className="w-3.5 h-3.5 mr-1.5" />
-                HTML Report
-              </Button>
-            </div>
-          )}
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => router.push(`/results/${jobId}/pipeline`)}
+            >
+              <BarChart2 className="w-3.5 h-3.5 mr-1.5" />
+              Pipeline Inspector
+            </Button>
+            {isCompleted && (
+              <>
+                <Button variant="outline" size="sm" onClick={handleDownloadJson}>
+                  <Download className="w-3.5 h-3.5 mr-1.5" />
+                  JSON Report
+                </Button>
+                <Button variant="outline" size="sm" onClick={handleDownloadHtml}>
+                  <Download className="w-3.5 h-3.5 mr-1.5" />
+                  HTML Report
+                </Button>
+              </>
+            )}
+          </div>
         </div>
 
         {/* Page title */}

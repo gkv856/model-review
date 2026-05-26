@@ -135,8 +135,8 @@ def _group_by_sheet_section(cells: list[dict]) -> dict[tuple, list[dict]]:
     return groups
 
 
-async def _call_llm_with_retry(system_prompt: str, user_prompt: str) -> list[dict]:
-    """Single LLM call with one retry on failure. Returns parsed issues list."""
+async def _call_llm_with_retry(system_prompt: str, user_prompt: str) -> tuple[list[dict], str]:
+    """Single LLM call with one retry on failure. Returns (parsed issues, raw response text)."""
     llm = get_llm()
     messages = [
         SystemMessage(content=system_prompt),
@@ -146,83 +146,95 @@ async def _call_llm_with_retry(system_prompt: str, user_prompt: str) -> list[dic
     for attempt in range(2):
         try:
             response = await llm.ainvoke(messages)
-            return parse_llm_json(response.content)
+            return parse_llm_json(response.content), response.content
         except Exception as exc:
             if attempt == 0:
                 logger.warning("[llm_reviewer] Attempt 1 failed (%s), retrying...", exc)
                 await asyncio.sleep(2)
             else:
                 logger.error("[llm_reviewer] Batch skipped after 2 failures: %s", exc)
-                return []
+                return [], ""
 
-    return []
+    return [], ""
 
 
 # ── public API ────────────────────────────────────────────────────────────────
 
-async def review_tier1(cells: list[dict]) -> tuple[list[dict], int]:
+def _prompt_record(pass_name: str, batch_idx: int, cells: list[dict],
+                   system_prompt: str, user_prompt: str, raw_response: str = "") -> dict:
+    """Build a serialisable record of a single LLM batch call."""
+    return {
+        "pass":          pass_name,
+        "batch":         batch_idx,
+        "cell_count":    len(cells),
+        "cell_refs":     [f"{c['sheet']}!{c['cell']}" for c in cells],
+        "system_prompt": system_prompt,
+        "user_prompt":   user_prompt,
+        "raw_response":  raw_response,
+    }
+
+
+async def review_tier1(cells: list[dict]) -> tuple[list[dict], int, list[dict]]:
     """
     Input:  enriched Tier 1 representative cells
-    Output: (issues, llm_call_count)
-
-    Groups by sheet+section, batches 20 per call.
+    Output: (issues, llm_call_count, prompt_records)
     """
     if not cells:
-        return [], 0
+        return [], 0, []
 
     issues: list[dict] = []
+    prompts: list[dict] = []
     calls = 0
     groups = _group_by_sheet_section(cells)
 
     for (_sheet, _section), group in groups.items():
         for batch in chunked(group, 20):
             user_prompt = _build_tier1_user_prompt(batch)
-            batch_issues = await _call_llm_with_retry(TIER1_SYSTEM_PROMPT, user_prompt)
+            batch_issues, raw = await _call_llm_with_retry(TIER1_SYSTEM_PROMPT, user_prompt)
+            prompts.append(_prompt_record("tier1", calls + 1, batch, TIER1_SYSTEM_PROMPT, user_prompt, raw))
             issues.extend(batch_issues)
             calls += 1
 
     logger.info("[llm_reviewer] Tier 1 done: %d cells, %d calls, %d issues", len(cells), calls, len(issues))
-    return issues, calls
+    return issues, calls, prompts
 
 
-async def review_tier2(cells: list[dict]) -> tuple[list[dict], int]:
+async def review_tier2(cells: list[dict]) -> tuple[list[dict], int, list[dict]]:
     """
     Input:  enriched Tier 2 representative cells
-    Output: (issues, llm_call_count)
-
-    Lightweight prompt, batches 50 per call.
+    Output: (issues, llm_call_count, prompt_records)
     """
     if not cells:
-        return [], 0
+        return [], 0, []
 
     issues: list[dict] = []
+    prompts: list[dict] = []
     calls = 0
 
     for batch in chunked(cells, 50):
         user_prompt = _build_tier2_user_prompt(batch)
-        batch_issues = await _call_llm_with_retry(TIER2_SYSTEM_PROMPT, user_prompt)
+        batch_issues, raw = await _call_llm_with_retry(TIER2_SYSTEM_PROMPT, user_prompt)
+        prompts.append(_prompt_record("tier2", calls + 1, batch, TIER2_SYSTEM_PROMPT, user_prompt, raw))
         issues.extend(batch_issues)
         calls += 1
 
     logger.info("[llm_reviewer] Tier 2 done: %d cells, %d calls, %d issues", len(cells), calls, len(issues))
-    return issues, calls
+    return issues, calls, prompts
 
 
-async def review_cross_section(terminal_cells: list[dict]) -> tuple[list[dict], int]:
+async def review_cross_section(terminal_cells: list[dict]) -> tuple[list[dict], int, list[dict]]:
     """
-    Input:  terminal output cells (is_terminal=True, from Tier 1+2)
-    Output: (issues, llm_call_count)
-
-    Single call reviewing structural consistency between sections.
-    Skipped if fewer than 2 terminal cells.
+    Input:  terminal output cells
+    Output: (issues, llm_call_count, prompt_records)
     """
     if len(terminal_cells) < 2:
-        return [], 0
+        return [], 0, []
 
     user_prompt = _build_cross_section_prompt(terminal_cells)
-    issues = await _call_llm_with_retry(CROSS_SECTION_SYSTEM_PROMPT, user_prompt)
+    issues, raw = await _call_llm_with_retry(CROSS_SECTION_SYSTEM_PROMPT, user_prompt)
+    record = _prompt_record("cross_section", 1, terminal_cells, CROSS_SECTION_SYSTEM_PROMPT, user_prompt, raw)
     logger.info("[llm_reviewer] Cross-section done: %d terminal cells, %d issues", len(terminal_cells), len(issues))
-    return issues, 1
+    return issues, 1, [record]
 
 
 async def run_llm_review(
@@ -231,21 +243,20 @@ async def run_llm_review(
 ) -> dict:
     """
     Input:  enriched Tier 1 + Tier 2 representative cells
-    Output: {"issues": [...], "llm_calls": N}
-
-    Orchestrates all three review passes and combines results.
+    Output: {"issues": [...], "llm_calls": N, "prompts": [...]}
     """
-    t1_issues, t1_calls = await review_tier1(tier1_reps)
-    t2_issues, t2_calls = await review_tier2(tier2_reps)
+    t1_issues, t1_calls, t1_prompts = await review_tier1(tier1_reps)
+    t2_issues, t2_calls, t2_prompts = await review_tier2(tier2_reps)
 
     terminal = [c for c in tier1_reps + tier2_reps if c.get("is_terminal")]
-    xs_issues, xs_calls = await review_cross_section(terminal)
+    xs_issues, xs_calls, xs_prompts = await review_cross_section(terminal)
 
     all_issues  = t1_issues + t2_issues + xs_issues
     total_calls = t1_calls + t2_calls + xs_calls
+    all_prompts = t1_prompts + t2_prompts + xs_prompts
 
     logger.info(
-        "[llm_reviewer] Total: %d issues, %d LLM calls",
-        len(all_issues), total_calls,
+        "[llm_reviewer] Total: %d issues, %d LLM calls, %d prompt records",
+        len(all_issues), total_calls, len(all_prompts),
     )
-    return {"issues": all_issues, "llm_calls": total_calls}
+    return {"issues": all_issues, "llm_calls": total_calls, "prompts": all_prompts}

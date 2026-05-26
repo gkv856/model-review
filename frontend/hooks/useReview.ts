@@ -20,7 +20,7 @@ export const useReview = () => {
       return api.submitReview({ modelFile, mapFile });
     },
     onSuccess: (data) => {
-      router.push(`/results/${data.job_id}`);
+      router.push(`/results/${data.job_id}/pipeline`);
     },
   });
 

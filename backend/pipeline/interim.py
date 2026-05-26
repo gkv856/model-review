@@ -50,6 +50,18 @@ def _write_json(path: Path, data) -> None:
 
 # ── Stage writers ─────────────────────────────────────────────────────────────
 
+def write_metadata(job_id: str, model_filename: str, map_filename: str) -> None:
+    """00 — Job metadata written at submission time, before the pipeline starts."""
+    from datetime import datetime, timezone
+    data = {
+        "job_id":         job_id,
+        "model_filename": model_filename,
+        "map_filename":   map_filename,
+        "started_at":     datetime.now(timezone.utc).isoformat(),
+    }
+    _write_json(_stage_path(job_id, "00_meta.json"), data)
+
+
 def write_map_parsed(job_id: str, whitelist: dict[str, dict[str, str]]) -> None:
     """01 — Flattened whitelist: sheet, cell, symbol."""
     rows = [
@@ -166,6 +178,11 @@ def write_cells_enriched(job_id: str, cells: list[dict]) -> None:
         _stage_path(job_id, "10_cells_enriched.csv"), rows,
         ["sheet", "cell", "symbol", "tier", "label", "units", "period", "section", "formula", "value"],
     )
+
+
+def write_llm_prompts(job_id: str, prompts: list[dict]) -> None:
+    """11p — One record per LLM batch call: pass name, cell refs, full system + user prompt."""
+    _write_json(_stage_path(job_id, "11_llm_prompts.json"), prompts)
 
 
 def write_llm_issues(job_id: str, issues: list[dict]) -> None:

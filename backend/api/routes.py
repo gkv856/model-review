@@ -14,6 +14,7 @@ from fastapi import APIRouter, BackgroundTasks, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
 from api.job_store import JOB_STORE, create_job, get_job, update_progress
+from pipeline.interim import write_metadata
 from pipeline.runner import run_pipeline
 from reporting.generator import build_html_report
 from utils.logger import get_logger
@@ -116,6 +117,8 @@ async def submit_review(
 
     job_id = str(uuid.uuid4())
     create_job(job_id)
+    # Write metadata immediately so it survives backend restarts
+    write_metadata(job_id, model_file.filename or "model.xlsx", map_file.filename or "map.xlsx")
 
     background_tasks.add_task(
         _background_pipeline,
@@ -164,33 +167,64 @@ async def get_report_html(job_id: str):
     return HTMLResponse(content=html)
 
 
+_BACKEND_ROOT  = Path(__file__).parent.parent
+_INTERIM_ROOT  = _BACKEND_ROOT / "outputs" / "interim"
+
+
+@router.get("/interim")
+async def list_interim_jobs():
+    """List all job IDs that have interim files, newest first by modification time."""
+    if not _INTERIM_ROOT.exists():
+        return {"jobs": []}
+    dirs = [d for d in _INTERIM_ROOT.iterdir() if d.is_dir()]
+    dirs.sort(key=lambda d: d.stat().st_mtime, reverse=True)
+
+    jobs = []
+    for d in dirs:
+        files = [f for f in d.iterdir() if f.is_file()]
+        meta_path = d / "00_meta.json"
+        model_filename = None
+        started_at = None
+        if meta_path.exists():
+            try:
+                import json as _json
+                meta = _json.loads(meta_path.read_text(encoding="utf-8"))
+                model_filename = meta.get("model_filename")
+                started_at     = meta.get("started_at")
+            except Exception:
+                pass
+        jobs.append({
+            "job_id":         d.name,
+            "file_count":     len([f for f in files if f.name != "00_meta.json"]),
+            "model_filename": model_filename,
+            "started_at":     started_at,
+        })
+    return {"jobs": jobs}
+
+
 @router.get("/interim/{job_id}")
 async def list_interim_files(job_id: str):
-    """List all interim stage files available for a job."""
-    job = get_job(job_id)
-    if not job:
-        raise HTTPException(404, detail="Job not found")
-    interim_dir = Path("interim") / job_id
+    """List all interim stage files available for a job.
+    Works for both live jobs and past runs after a server restart."""
+    interim_dir = _INTERIM_ROOT / job_id
     if not interim_dir.exists():
         return {"job_id": job_id, "files": []}
     files = sorted(
-        {"name": f.name, "size_bytes": f.stat().st_size}
-        for f in interim_dir.iterdir()
-        if f.is_file()
+        [{"name": f.name, "size_bytes": f.stat().st_size}
+         for f in interim_dir.iterdir() if f.is_file()],
+        key=lambda x: x["name"],
     )
     return {"job_id": job_id, "files": files}
 
 
 @router.get("/interim/{job_id}/{filename}")
 async def download_interim_file(job_id: str, filename: str):
-    """Download a single interim stage file by name."""
-    job = get_job(job_id)
-    if not job:
-        raise HTTPException(404, detail="Job not found")
+    """Download a single interim stage file by name.
+    Works for both live jobs and past runs after a server restart."""
     # Prevent path traversal
     if "/" in filename or "\\" in filename or ".." in filename:
         raise HTTPException(400, detail="Invalid filename")
-    file_path = Path("interim") / job_id / filename
+    file_path = _INTERIM_ROOT / job_id / filename
     if not file_path.exists():
         raise HTTPException(404, detail="File not found")
     media_type = "application/json" if filename.endswith(".json") else "text/csv"

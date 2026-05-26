@@ -107,6 +107,7 @@ def run_pipeline(
     llm_issues = llm_result["issues"]
     llm_calls  = llm_result["llm_calls"]
     interim.write_llm_issues(job_id, llm_issues)
+    interim.write_llm_prompts(job_id, llm_result.get("prompts", []))
 
     # Step 11 — Propagation
     update_progress(90, "Propagating findings")
