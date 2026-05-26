@@ -1,0 +1,58 @@
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg
+*.egg-info/
+dist/
+build/
+.Python
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# pytest / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Environment variables (never commit secrets)
+.env
+.env.local
+.env.*.local
+
+# ── Node / Frontend ───────────────────────────────────────────────────────────
+node_modules/
+.npm
+.pnp
+.pnp.js
+
+# Next.js
+.next/
+out/
+.vercel
+
+# TypeScript build info
+*.tsbuildinfo
+
+# ── OS ────────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── Editors ───────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ── Project-specific ──────────────────────────────────────────────────────────
+# Uploaded Excel files — never commit user data
+*.xlsx
+*.xls
+
+# Temp pipeline files
+*.tmp

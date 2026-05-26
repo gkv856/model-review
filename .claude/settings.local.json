@@ -1,0 +1,39 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mkdir:*)",
+      "Bash(mv:*)",
+      "Bash(npm run build:*)",
+      "Bash(npx tsc:*)",
+      "Bash(rm:*)",
+      "Bash(cp:*)",
+      "Bash(npm run lint)",
+      "Bash(cat:*)",
+      "Bash(xargs:*)",
+      "Bash(find:*)",
+      "mcp__magic__21st_magic_component_inspiration",
+      "mcp__magic__21st_magic_component_builder",
+      "mcp__magic__21st_magic_component_refiner",
+      "Bash(\"c:\\\\Stuff\\\\Projects\\\\unvritt-ui\\\\src\\\\htmls\\\\story_new.html\")",
+      "Bash(node scripts/extract-html.js src/htmls/toolkit_new.html dist/toolkit.lcr.json --slot=toolkit)",
+      "Bash(node -e \"const j = require\\(''./dist/toolkit.lcr.json''\\); console.log\\(''Valid JSON ✓''\\); console.log\\(''Keys:'', Object.keys\\(j.toolkit\\)\\); console.log\\(''html starts with:'', j.toolkit.html.slice\\(0,60\\)\\); console.log\\(''css starts with:'', j.toolkit.css.slice\\(0,60\\)\\);\")",
+      "Bash(node -e \"const j = require\\(''./dist/toolkit.lcr.json''\\); console.log\\(''Valid JSON''\\); console.log\\(''Keys:'', Object.keys\\(j.toolkit\\)\\); console.log\\(''html has canvas:'', j.toolkit.html.includes\\(''uv-radar-chart''\\)\\); console.log\\(''js has new Chart:'', j.toolkit.js.includes\\(''new Chart''\\)\\);\")",
+      "Bash(node scripts/extract-html.js src/htmls/toolkit_new.html tl.json --slot=toolkit)",
+      "Bash(node scripts/extract-html.js src/htmls/story_new.html story.json --slot=story)",
+      "Bash(node -e \"const d=require\\(''./story.json''\\); console.log\\(d.story.js\\)\")",
+      "Bash(node scripts/build-ig-json.js)",
+      "Bash(npm install:*)",
+      "Bash(python3 .claude/skills/ui-ux-pro-max/scripts/search.py \"mobile news discovery feed dark vertical scroll cards\" --design-system -p \"Unvritt Feeds\" -f markdown)",
+      "Bash(python3 .claude/skills/ui-ux-pro-max/scripts/search.py \"touch scroll card feed mobile dark\" --domain ux -n 6)",
+      "Bash(curl -I \"https://unvritt.com/story/why-the-us-iran-war-just-made-indias-clean-energy-transition-an-economic-mandate-wxokq/view\")",
+      "Skill(update-config)",
+      "Skill(update-config:*)",
+      "Bash(python3 .claude/skills/ui-ux-pro-max/scripts/search.py \"magazine report reader editorial dark premium\" --design-system -f markdown)",
+      "mcp__shadcn-ui__search_items_in_registries",
+      "Bash(python3 .claude/skills/ui-ux-pro-max/scripts/search.py \"bento grid stat card data editorial\" --domain style -n 3)",
+      "mcp__shadcn-ui__get_item_examples_from_registries",
+      "Bash(python3 .claude/skills/ui-ux-pro-max/scripts/search.py \"bento grid asymmetric featured card apple dashboard\" --domain product -n 2)"
+    ],
+    "deny": []
+  }
+}
