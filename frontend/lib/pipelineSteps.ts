@@ -1,6 +1,6 @@
 // Pipeline step definitions, CSV/JSON parsing, and per-step aggregation.
 
-export type StepStatus = "pending" | "loading" | "ready"
+export type StepStatus = "pending" | "loading" | "ready" | "failed"
 export type FileType = "csv" | "json"
 
 export interface IPipelineStep {
@@ -10,9 +10,6 @@ export interface IPipelineStep {
   description: string
   explanation: string  // 1–2 sentences shown in the pipeline inspector
   fileType: FileType
-  colorClass: string   // border/accent colour token
-  bgClass: string
-  textClass: string
 }
 
 export interface IStepStat {
@@ -26,94 +23,71 @@ export interface IStepData {
   rows: Record<string, string>[]
   stats: IStepStat[]
   sizeBytes: number
+  error?: string
 }
 
 // ── Step definitions ──────────────────────────────────────────────────────────
 
 export const PIPELINE_STEPS: IPipelineStep[] = [
   {
-    id: "01", filename: "01_map_parsed.csv",
+    id: "01", filename: "01_map_parsed.csv", fileType: "csv",
     name: "Map Parsed", description: "Symbol whitelist from map file",
     explanation: "The VBA map file is read to build a whitelist of every named cell and its symbol — F (formula), S (sum), C (callup), N (hardcoded), or X (external link). Cells with no symbol are drag-copies and are discarded entirely; they never enter the pipeline.",
-    fileType: "csv",
-    colorClass: "border-blue-500/40", bgClass: "bg-blue-500/10", textClass: "text-blue-400",
   },
   {
-    id: "02", filename: "02_cells_parsed.csv",
+    id: "02", filename: "02_cells_parsed.csv", fileType: "csv",
     name: "Cells Parsed", description: "Model cells extracted",
     explanation: "Every cell in the model workbook is extracted: its formula or literal value, the sheet it lives on, its row/column position, and whether it carries a unique formula. This is the complete raw dataset that all downstream steps operate on.",
-    fileType: "csv",
-    colorClass: "border-blue-400/40", bgClass: "bg-blue-400/10", textClass: "text-blue-300",
   },
   {
-    id: "03", filename: "03_structure_map.json",
+    id: "03", filename: "03_structure_map.json", fileType: "json",
     name: "Structure Detected", description: "Sheet layout & timeline analysis",
     explanation: "Each sheet's layout is reverse-engineered to find the timeline row, label column, unit column, and section headers. This structural map is what allows the enrichment step to attach human-readable context — period, label, section — to raw cell coordinates.",
-    fileType: "json",
-    colorClass: "border-purple-500/40", bgClass: "bg-purple-500/10", textClass: "text-purple-400",
   },
   {
-    id: "04", filename: "04_graph_metrics.csv",
+    id: "04", filename: "04_graph_metrics.csv", fileType: "csv",
     name: "Dependency Graph", description: "Node metrics for all cells",
     explanation: "A directed graph is built from formula references: if A1 depends on B1, the edge runs B1→A1. Per-node metrics — descendants, ancestors, cross-sheet depth, terminal status — are computed here and feed directly into the risk scoring formula.",
-    fileType: "csv",
-    colorClass: "border-purple-400/40", bgClass: "bg-purple-400/10", textClass: "text-purple-300",
   },
   {
-    id: "05", filename: "05_cells_scored.csv",
+    id: "05", filename: "05_cells_scored.csv", fileType: "csv",
     name: "Risk Scoring", description: "0–100 risk score per cell",
     explanation: "Each cell receives a 0–100 risk score combining six weighted components: depth in the dependency chain, whether it is a terminal output cell, cross-sheet complexity, symbol weight (F/S/C/N), ancestor breadth, and graph bridge status. Higher score means higher review priority.",
-    fileType: "csv",
-    colorClass: "border-amber-500/40", bgClass: "bg-amber-500/10", textClass: "text-amber-400",
   },
   {
-    id: "06", filename: "06_cells_tiered.csv",
+    id: "06", filename: "06_cells_tiered.csv", fileType: "csv",
     name: "Tier Assignment", description: "Percentile-based tier buckets",
     explanation: "Cells are ranked by risk score and bucketed using percentile thresholds: the top 15% become Tier 1 (full LLM review), the next 35% Tier 2 (lightweight review), and the rest Tier 3 (rule checks only). Hardcoded (N) and external-link (X) cells are auto-assigned and bypass this ranking.",
-    fileType: "csv",
-    colorClass: "border-amber-400/40", bgClass: "bg-amber-400/10", textClass: "text-amber-300",
   },
   {
-    id: "07", filename: "07_auto_flags.csv",
+    id: "07", filename: "07_auto_flags.csv", fileType: "csv",
     name: "Auto Flagged", description: "N/X cells and graph errors",
     explanation: "Three rule-based detectors fire without any LLM: external links buried inside formula dependency chains (X-in-chain), circular references detected via graph cycle analysis, and formula references pointing to cells that don't exist in the workbook.",
-    fileType: "csv",
-    colorClass: "border-red-500/40", bgClass: "bg-red-500/10", textClass: "text-red-400",
   },
   {
-    id: "08", filename: "08_tier3_issues.csv",
+    id: "08", filename: "08_tier3_issues.csv", fileType: "csv",
     name: "Tier 3 Checks", description: "Rule-based deterministic checks",
     explanation: "Five deterministic rules run on Tier 3 cells only: divide-by-zero risk (formula contains '/' and a predecessor is zero), hardcoded values mid-chain, self-references, empty sum ranges, and mismatched units between a cell and its direct predecessors.",
-    fileType: "csv",
-    colorClass: "border-red-400/40", bgClass: "bg-red-400/10", textClass: "text-red-300",
   },
   {
-    id: "09", filename: "09_deduplication.csv",
+    id: "09", filename: "09_deduplication.csv", fileType: "csv",
     name: "Deduplication", description: "Identical formula patterns collapsed",
     explanation: "Cells whose formulas share the same structural pattern (same operations, same relative reference layout) are collapsed into one representative. This is what bounds LLM cost regardless of model size — a workbook with 8,000 cells may reduce to 300 unique patterns sent for review.",
-    fileType: "csv",
-    colorClass: "border-emerald-500/40", bgClass: "bg-emerald-500/10", textClass: "text-emerald-400",
   },
   {
-    id: "10", filename: "10_cells_enriched.csv",
+    id: "10", filename: "10_cells_enriched.csv", fileType: "csv",
     name: "Enrichment", description: "Label, units, period, section added",
     explanation: "Each deduplicated representative is annotated with its human-readable label (from the label column), units, time period (from the timeline row), section heading, and the values of its direct predecessor cells. This is the full context the LLM reads — without it, a formula like '=B5/C5' is meaningless.",
-    fileType: "csv",
-    colorClass: "border-emerald-400/40", bgClass: "bg-emerald-400/10", textClass: "text-emerald-300",
   },
   {
-    id: "11", filename: "11_llm_issues.csv",
+    id: "11", filename: "11_llm_issues.csv", fileType: "csv",
     name: "LLM Review", description: "AI model findings",
     explanation: "The AI model reviews enriched representatives in three passes: Tier 1 cells in detail (batches of 20, grouped by sheet and section), Tier 2 lightly (batches of 50, formula and label only), and all terminal output cells together to detect cross-section sign flips and missing linkages.",
-    fileType: "csv",
-    colorClass: "border-orange-500/40", bgClass: "bg-orange-500/10", textClass: "text-orange-400",
   },
   {
-    id: "12", filename: "12_propagated_issues.csv",
+    id: "12", filename: "12_propagated_issues.csv", fileType: "csv",
     name: "Final Issues", description: "Propagated to all pattern instances",
     explanation: "Every finding is propagated from its representative cell back to all cells that share the same formula pattern. An issue flagged on one cell can affect dozens of instances across the model; the instance_count column shows the total model-wide impact of each finding.",
-    fileType: "csv",
-    colorClass: "border-orange-400/40", bgClass: "bg-orange-400/10", textClass: "text-orange-300",
   },
 ]
 

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import {
   ArrowLeft, CheckCircle2, Clock, Loader2, X,
   BarChart2, History, ChevronRight, Info, ChevronDown, Layers,
+  AlertCircle, Minus,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
@@ -107,7 +108,7 @@ function SummaryPanel({ stepData, modelName }: ISummaryPanelProps) {
           </div>
           <div className="text-right shrink-0">
             <p className={cn("text-xs font-semibold", isComplete ? "text-emerald-400" : "text-amber-400")}>
-              {isComplete ? "Complete" : `${readySteps} / ${PIPELINE_STEPS.length} stages`}
+              {isComplete ? "All stages ready" : `${readySteps} / ${PIPELINE_STEPS.length} stages`}
             </p>
             <p className="text-[11px] text-muted-foreground mt-0.5">{totalCells} cells analysed</p>
           </div>
@@ -326,38 +327,54 @@ interface IStepRowProps {
   step: IPipelineStep
   data: IStepData
   isSelected: boolean
+  isFailed?: boolean
+  isSkipped?: boolean
   onClick: () => void
 }
 
-function StepRow({ step, data, isSelected, onClick }: IStepRowProps) {
+// Status-based colour helpers — consistent across all steps
+const STATUS_TEXT  = { ready: "text-emerald-400", failed: "text-red-400",   other: "text-white/25" }
+const STATUS_BG    = { ready: "bg-emerald-500/15", failed: "bg-red-500/15",  other: "bg-white/5" }
+const STATUS_BADGE = { ready: "bg-emerald-500/15 text-emerald-400", failed: "bg-red-500/15 text-red-400", other: "bg-white/5 text-white/20" }
+
+function stepStatusKey(isReady: boolean, isFailed?: boolean): "ready" | "failed" | "other" {
+  if (isReady)  return "ready"
+  if (isFailed) return "failed"
+  return "other"
+}
+
+function StepRow({ step, data, isSelected, isFailed, isSkipped, onClick }: IStepRowProps) {
   const isReady   = data.status === "ready"
   const isLoading = data.status === "loading"
-  const isPending = data.status === "pending"
+  // treat data.status === "failed" the same as isFailed prop
+  const stepFailed = isFailed || data.status === "failed"
+  const isPending = data.status === "pending" && !stepFailed && !isSkipped
   const [infoOpen, setInfoOpen] = useState(false)
+  const isClickable = isReady || stepFailed
+  const sk = stepStatusKey(isReady, stepFailed)
 
   return (
     <div className={cn(
       "border-l-[3px] transition-all duration-150",
-      isSelected
-        ? cn("bg-white/[0.06]", step.textClass, "border-l-current")
-        : isReady
-        ? "border-l-transparent hover:bg-white/[0.03] hover:border-l-white/15"
-        : "border-l-transparent"
+      isSelected && stepFailed ? "bg-red-500/[0.05] border-l-red-500"
+      : isSelected && isReady  ? "bg-emerald-500/[0.05] border-l-emerald-500"
+      : isClickable             ? "border-l-transparent hover:bg-white/[0.03] hover:border-l-white/15"
+      : "border-l-transparent"
     )}>
       <button
         onClick={onClick}
-        disabled={!isReady}
+        disabled={!isClickable}
         className={cn(
           "w-full text-left px-4 pt-4 pb-3 focus-visible:outline-none",
-          isReady ? "cursor-pointer" : "cursor-default"
+          isClickable ? "cursor-pointer" : "cursor-default"
         )}
       >
         <div className="flex items-start justify-between gap-3">
-          {/* Left: badge + text */}
           <div className="flex items-start gap-3 min-w-0">
+            {/* Step number badge — colour = status */}
             <div className={cn(
               "w-7 h-7 rounded-md flex items-center justify-center text-[11px] font-bold shrink-0 mt-0.5",
-              isReady ? cn(step.bgClass, step.textClass) : "bg-white/5 text-white/20"
+              STATUS_BADGE[sk]
             )}>
               {step.id}
             </div>
@@ -365,29 +382,29 @@ function StepRow({ step, data, isSelected, onClick }: IStepRowProps) {
             <div className="min-w-0">
               <p className={cn(
                 "text-sm font-semibold leading-tight",
-                isReady ? "text-foreground" : "text-white/30"
+                isReady ? "text-foreground" : stepFailed ? "text-red-400" : "text-white/30"
               )}>
                 {step.name}
               </p>
-              <p className="text-[11px] text-muted-foreground mt-0.5 leading-snug">
-                {step.description}
-              </p>
+              <p className="text-[11px] text-muted-foreground mt-0.5 leading-snug">{step.description}</p>
 
-              {/* Stats chips — ready */}
-              {isReady && data.stats.length > 0 && (
+              {stepFailed && (
+                <p className="text-[11px] text-red-400/80 mt-1">LLM errors detected in this step</p>
+              )}
+
+              {/* Stats chips — show even for failed step so row count is visible */}
+              {(isReady || stepFailed) && data.stats.length > 0 && (
                 <div className="flex flex-wrap gap-1 mt-2">
                   {data.stats.slice(0, 4).map((stat) => (
-                    <StatChip key={stat.label} label={stat.label} value={stat.value} textClass={step.textClass} />
+                    <StatChip key={stat.label} label={stat.label} value={stat.value} textClass={STATUS_TEXT[sk]} />
                   ))}
                   {data.stats.length > 4 && (
-                    <span className="text-[10px] text-muted-foreground self-center">
-                      +{data.stats.length - 4}
-                    </span>
+                    <span className="text-[10px] text-muted-foreground self-center">+{data.stats.length - 4}</span>
                   )}
                 </div>
               )}
 
-              {/* Skeleton — loading */}
+              {/* Loading skeleton */}
               {isLoading && (
                 <div className="flex gap-1.5 mt-2">
                   {[56, 44, 52].map((w) => (
@@ -398,54 +415,96 @@ function StepRow({ step, data, isSelected, onClick }: IStepRowProps) {
             </div>
           </div>
 
-          {/* Right: status + row count */}
+          {/* Status icon */}
           <div className="shrink-0 flex flex-col items-end gap-1 mt-0.5">
-            {isReady   && <CheckCircle2 className={cn("w-4 h-4", step.textClass)} />}
-            {isLoading && <Loader2 className="w-4 h-4 text-muted-foreground animate-spin" />}
-            {isPending && <Clock className="w-4 h-4 text-white/15" />}
+            {isReady    && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
+            {isLoading  && <Loader2 className="w-4 h-4 text-white/30 animate-spin" />}
+            {isPending  && <Clock className="w-4 h-4 text-white/15" />}
+            {stepFailed && <AlertCircle className="w-4 h-4 text-red-400" />}
+            {isSkipped  && <Minus className="w-3.5 h-3.5 text-white/10" />}
             {isReady && (
-              <span className="text-[10px] text-white/30 tabular-nums">
-                {data.rows.length.toLocaleString()} rows
-              </span>
+              <span className="text-[10px] text-white/30 tabular-nums">{data.rows.length.toLocaleString()} rows</span>
             )}
-            {isSelected && (
-              <ChevronRight className={cn("w-3 h-3 mt-1", step.textClass)} />
-            )}
+            {isSelected && isReady && <ChevronRight className="w-3 h-3 mt-1 text-emerald-400" />}
           </div>
         </div>
       </button>
 
-      {/* Info toggle button */}
-      <div className="px-4 pb-3 flex items-center gap-1.5">
+      {/* What does this step do? */}
+      {(isReady || stepFailed) && (
+        <div className="px-4 pb-3">
+          <button
+            onClick={(e) => { e.stopPropagation(); setInfoOpen((o) => !o) }}
+            className={cn(
+              "flex items-center gap-1 text-[10px] transition-colors cursor-pointer focus-visible:outline-none rounded",
+              infoOpen ? cn("font-medium", STATUS_TEXT[sk]) : "text-white/25 hover:text-white/50"
+            )}
+          >
+            <Info className="w-3 h-3" />
+            {infoOpen ? "Hide explanation" : "What does this step do?"}
+          </button>
+        </div>
+      )}
+
+      {infoOpen && (
+        <div className={cn("mx-4 mb-4 rounded-lg px-3.5 py-3 border border-white/[0.06]", STATUS_BG[sk])}>
+          <p className={cn("text-[11px] font-semibold uppercase tracking-wider mb-1.5", STATUS_TEXT[sk])}>
+            Stage {step.id} of {PIPELINE_STEPS.length}
+          </p>
+          <p className="text-xs text-foreground/70 leading-relaxed">{step.explanation}</p>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Failed step panel ─────────────────────────────────────────────────────────
+
+interface IFailedStepPanelProps {
+  step: IPipelineStep
+  error: string
+  onClose: () => void
+}
+
+function FailedStepPanel({ step, error, onClose }: IFailedStepPanelProps) {
+  return (
+    <div className="rounded-xl border border-red-500/20 bg-[#13161f] flex flex-col h-full shadow-xl shadow-black/40">
+      <div className="flex items-center justify-between px-5 py-4 border-b border-red-500/10 gap-3">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-red-500/20 flex items-center justify-center text-[11px] font-bold shrink-0 text-red-400">
+            {step.id}
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-red-400">{step.name}</p>
+            <p className="text-[11px] text-muted-foreground">Pipeline failed at this step</p>
+          </div>
+        </div>
         <button
-          onClick={(e) => { e.stopPropagation(); setInfoOpen((o) => !o) }}
-          className={cn(
-            "flex items-center gap-1 text-[10px] transition-colors cursor-pointer",
-            "focus-visible:outline-none rounded",
-            infoOpen
-              ? cn("font-medium", step.textClass)
-              : "text-white/25 hover:text-white/50"
-          )}
+          onClick={onClose}
+          className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-white/10 transition-colors cursor-pointer"
         >
-          <Info className="w-3 h-3" />
-          {infoOpen ? "Hide explanation" : "What does this step do?"}
+          <X className="w-4 h-4 text-muted-foreground" />
         </button>
       </div>
 
-      {/* Inline explanation */}
-      {infoOpen && (
-        <div className={cn(
-          "mx-4 mb-4 rounded-lg px-3.5 py-3 border",
-          step.bgClass, step.colorClass.replace("/40", "/20")
-        )}>
-          <p className={cn("text-[11px] font-semibold uppercase tracking-wider mb-1.5", step.textClass)}>
-            Stage {step.id} of {PIPELINE_STEPS.length}
-          </p>
-          <p className="text-xs text-foreground/70 leading-relaxed">
-            {step.explanation}
-          </p>
+      <div className="flex-1 flex flex-col items-center justify-center px-8 gap-6 text-center">
+        <div className="w-16 h-16 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center">
+          <AlertCircle className="w-8 h-8 text-red-400" />
         </div>
-      )}
+        <div>
+          <p className="text-sm font-semibold text-foreground mb-2">Error at Step {step.id} — {step.name}</p>
+          <p className="text-xs text-muted-foreground mb-4 max-w-md leading-relaxed">{step.explanation}</p>
+        </div>
+        <div className="w-full max-w-lg text-left">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-red-400/70 mb-2">Error details</p>
+          <pre className="text-xs text-red-300/80 bg-red-500/[0.06] border border-red-500/15 rounded-lg p-4 whitespace-pre-wrap break-words font-mono leading-relaxed">
+            {error}
+          </pre>
+        </div>
+        <p className="text-[11px] text-muted-foreground/50">
+          Steps before this point completed successfully — select them in the left panel to inspect their data.
+        </p>
+      </div>
     </div>
   )
 }
@@ -532,7 +591,7 @@ function DetailPanel({ step, data, onClose, prompts }: IDetailPanelProps) {
         <div className="flex items-center gap-3">
           <div className={cn(
             "w-8 h-8 rounded-lg flex items-center justify-center text-[11px] font-bold shrink-0",
-            step.bgClass, step.textClass
+            STATUS_BADGE["ready"]
           )}>
             {step.id}
           </div>
@@ -549,7 +608,7 @@ function DetailPanel({ step, data, onClose, prompts }: IDetailPanelProps) {
           {/* All stats */}
           <div className="hidden xl:flex gap-1 flex-wrap max-w-sm">
             {data.stats.map((stat) => (
-              <StatChip key={stat.label} label={stat.label} value={stat.value} textClass={step.textClass} />
+              <StatChip key={stat.label} label={stat.label} value={stat.value} textClass={STATUS_TEXT["ready"]} />
             ))}
           </div>
 
@@ -573,10 +632,10 @@ function DetailPanel({ step, data, onClose, prompts }: IDetailPanelProps) {
 
       {/* Stage explanation */}
       {showExplain && (
-        <div className={cn("px-5 py-4 border-b border-white/[0.06]", step.bgClass)}>
+        <div className={cn("px-5 py-4 border-b border-white/[0.06]", STATUS_BG["ready"])}>
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
-              <p className={cn("text-[10px] font-semibold uppercase tracking-widest mb-2", step.textClass)}>
+              <p className={cn("text-[10px] font-semibold uppercase tracking-widest mb-2", STATUS_TEXT["ready"])}>
                 Stage {step.id} of {PIPELINE_STEPS.length} — What this step does
               </p>
               <p className="text-sm text-foreground/75 leading-relaxed max-w-2xl">
@@ -600,7 +659,7 @@ function DetailPanel({ step, data, onClose, prompts }: IDetailPanelProps) {
           className={cn(
             "w-full px-5 py-2 text-left text-[11px] border-b border-white/[0.06]",
             "transition-colors cursor-pointer hover:bg-white/[0.03]",
-            step.textClass
+            STATUS_TEXT["ready"]
           )}
         >
           <Info className="w-3 h-3 inline mr-1.5 -mt-px" />
@@ -612,7 +671,7 @@ function DetailPanel({ step, data, onClose, prompts }: IDetailPanelProps) {
       {data.stats.length > 0 && (
         <div className="xl:hidden flex flex-wrap gap-1 px-5 py-2.5 border-b border-white/[0.06]">
           {data.stats.map((stat) => (
-            <StatChip key={stat.label} label={stat.label} value={stat.value} textClass={step.textClass} />
+            <StatChip key={stat.label} label={stat.label} value={stat.value} textClass={STATUS_TEXT["ready"]} />
           ))}
         </div>
       )}
@@ -625,7 +684,7 @@ function DetailPanel({ step, data, onClose, prompts }: IDetailPanelProps) {
             className={cn(
               "py-2.5 px-1 mr-5 text-xs font-semibold border-b-2 transition-colors cursor-pointer",
               activeTab === "table"
-                ? cn("border-current", step.textClass)
+                ? cn("border-current", STATUS_TEXT["ready"])
                 : "border-transparent text-muted-foreground hover:text-foreground"
             )}
           >
@@ -637,7 +696,7 @@ function DetailPanel({ step, data, onClose, prompts }: IDetailPanelProps) {
             className={cn(
               "py-2.5 px-1 text-xs font-semibold border-b-2 transition-colors cursor-pointer flex items-center gap-1.5",
               activeTab === "prompts"
-                ? cn("border-current", step.textClass)
+                ? cn("border-current", STATUS_TEXT["ready"])
                 : "border-transparent text-muted-foreground hover:text-foreground"
             )}
           >
@@ -771,7 +830,7 @@ export default function PipelinePage(props: IPageProps) {
   const status      = statusQuery.data
   const jobComplete = status?.status === "completed" || status?.status === "failed"
 
-  const { stepData, readyCount, total } = usePipelineData({ jobId, jobComplete })
+  const { stepData, readyCount, loadedCount, failedCount, total, firstPollDone } = usePipelineData({ jobId, jobComplete })
   // "summary" = executive summary panel; step id string = stage detail
   const [selectedId, setSelectedId]     = useState<string>("summary")
   const [pastRuns,   setPastRuns]       = useState<IPastRun[]>([])
@@ -784,6 +843,7 @@ export default function PipelinePage(props: IPageProps) {
 
   const handleRowClick = (id: string) => {
     if (id === "summary") { setSelectedId("summary"); return }
+    if (id === failedStepId) { setSelectedId(id); return }
     if (stepData[id]?.status !== "ready") return
     setSelectedId((prev) => (prev === id ? "summary" : id))
   }
@@ -796,8 +856,6 @@ export default function PipelinePage(props: IPageProps) {
       .then(data => setPrompts(Array.isArray(data) ? data : null))
       .catch(() => setPrompts(null))
   }, [selectedId, jobId])
-
-  const progressPct = total > 0 ? Math.round((readyCount / total) * 100) : 0
 
   useEffect(() => {
     fetch("/api/interim")
@@ -820,12 +878,35 @@ export default function PipelinePage(props: IPageProps) {
     return `${run.job_id === jobId ? "▸ " : ""}${name} · ${run.file_count} stages`
   }
 
-  const isRunning  = status?.status === "running" || status?.status === "pending"
-  const isFailed   = status?.status === "failed"
-  const allReady   = readyCount === total && total > 0
+  const isRunning      = status?.status === "running" || status?.status === "pending"
+  const isFailed       = status?.status === "failed"
+  const anyStepFailed  = failedCount > 0
+  const effectiveFailed = isFailed || anyStepFailed
+  const allLoaded      = loadedCount === total && total > 0
+
+  // Step with status="failed" (LLM error detected), or first non-loaded step when job failed
+  const failedStepId = anyStepFailed
+    ? PIPELINE_STEPS.find((s) => stepData[s.id]?.status === "failed")?.id ?? null
+    : (isFailed && firstPollDone)
+      ? PIPELINE_STEPS.find((s) => stepData[s.id]?.status !== "ready")?.id ?? null
+      : null
+  const failedStepIndex = failedStepId
+    ? PIPELINE_STEPS.findIndex((s) => s.id === failedStepId)
+    : -1
+  const skippedStepIds = new Set(
+    failedStepIndex >= 0
+      ? PIPELINE_STEPS.slice(failedStepIndex + 1).map((s) => s.id)
+      : []
+  )
+
+  // Auto-select the failed step so users see the error immediately
+  useEffect(() => {
+    if (failedStepId && selectedId === "summary") setSelectedId(failedStepId)
+  }, [failedStepId]) // eslint-disable-line react-hooks/exhaustive-deps
   // 100% when all files loaded; use backend progress while running; file ratio otherwise
   const execProgress = status?.progress ?? 0
-  const displayPct   = allReady ? 100 : isRunning ? execProgress : progressPct
+  const progressPct  = total > 0 ? Math.round((loadedCount / total) * 100) : 0
+  const displayPct   = allLoaded ? 100 : isRunning ? execProgress : progressPct
 
   return (
     <main className="h-screen bg-[#0f1117] flex flex-col overflow-hidden">
@@ -860,8 +941,8 @@ export default function PipelinePage(props: IPageProps) {
               </div>
             )}
 
-            {/* View full report — only when complete */}
-            {(allReady || (jobComplete && !isFailed)) && (
+            {/* View full report — only when complete without failures */}
+            {jobComplete && !effectiveFailed && (
               <button
                 onClick={() => router.push(`/results/${jobId}`)}
                 className="text-xs text-muted-foreground hover:text-foreground border border-white/10 hover:border-white/20 rounded-md px-3 py-1.5 transition-colors cursor-pointer"
@@ -873,12 +954,12 @@ export default function PipelinePage(props: IPageProps) {
             {status && (
               <Badge variant="outline" className={cn(
                 "text-xs",
-                status.status === "completed" && "border-emerald-500/40 text-emerald-400",
-                status.status === "running"   && "border-amber-500/40 text-amber-400",
-                status.status === "failed"    && "border-red-500/40 text-red-400",
-                status.status === "pending"   && "border-white/20 text-muted-foreground",
+                effectiveFailed                             && "border-red-500/40 text-red-400",
+                !effectiveFailed && status.status === "completed" && "border-emerald-500/40 text-emerald-400",
+                status.status === "running"                 && "border-amber-500/40 text-amber-400",
+                !effectiveFailed && status.status === "pending"   && "border-white/20 text-muted-foreground",
               )}>
-                {status.status}
+                {effectiveFailed && status.status === "completed" ? "failed" : status.status}
               </Badge>
             )}
           </div>
@@ -904,9 +985,9 @@ export default function PipelinePage(props: IPageProps) {
             {/* Stage file count badge */}
             <div className="text-right shrink-0">
               <p className={cn("text-xs font-semibold tabular-nums",
-                jobComplete ? "text-emerald-400" : "text-amber-400"
+                effectiveFailed ? "text-red-400" : jobComplete ? "text-emerald-400" : "text-amber-400"
               )}>
-                {readyCount}/{total} stages ready
+                {loadedCount}/{total} stages ready
               </p>
             </div>
           </div>
@@ -931,7 +1012,12 @@ export default function PipelinePage(props: IPageProps) {
             {isFailed && (
               <p className="text-[11px] text-red-400">{status?.error ?? "Pipeline failed"}</p>
             )}
-            {(allReady || (jobComplete && !isFailed)) && (
+            {anyStepFailed && !isFailed && (
+              <p className="text-[11px] text-red-400">
+                {failedCount === 1 ? "1 step" : `${failedCount} steps`} failed — check the highlighted stage
+              </p>
+            )}
+            {allLoaded && !effectiveFailed && (
               <p className="text-[11px] text-emerald-400">All pipeline steps complete</p>
             )}
           </div>
@@ -952,10 +1038,10 @@ export default function PipelinePage(props: IPageProps) {
                 <div className="flex items-center gap-1.5">
                   <span className={cn(
                     "w-1.5 h-1.5 rounded-full",
-                    readyCount === total ? "bg-emerald-400" : jobComplete ? "bg-white/20" : "bg-amber-400 animate-pulse"
+                    effectiveFailed ? "bg-red-400" : loadedCount === total ? "bg-emerald-400" : "bg-amber-400 animate-pulse"
                   )} />
                   <span className="text-[10px] text-muted-foreground">
-                    {readyCount}/{total} ready
+                    {loadedCount}/{total} ready
                   </span>
                 </div>
               </div>
@@ -995,6 +1081,8 @@ export default function PipelinePage(props: IPageProps) {
                     step={step}
                     data={stepData[step.id]}
                     isSelected={selectedId === step.id}
+                    isFailed={step.id === failedStepId}
+                    isSkipped={skippedStepIds.has(step.id)}
                     onClick={() => handleRowClick(step.id)}
                   />
                 ))}
@@ -1012,6 +1100,12 @@ export default function PipelinePage(props: IPageProps) {
                 data={selectedData}
                 onClose={() => setSelectedId("summary")}
                 {...(selectedId === "11" ? { prompts } : {})}
+              />
+            ) : selectedId === failedStepId && failedStepId ? (
+              <FailedStepPanel
+                step={PIPELINE_STEPS.find((s) => s.id === failedStepId)!}
+                error={stepData[failedStepId]?.error ?? status?.error ?? "An unexpected error occurred during this step."}
+                onClose={() => setSelectedId("summary")}
               />
             ) : (
               <EmptyDetailState readyCount={readyCount} />

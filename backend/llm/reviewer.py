@@ -143,19 +143,20 @@ async def _call_llm_with_retry(system_prompt: str, user_prompt: str) -> tuple[li
         HumanMessage(content=user_prompt),
     ]
 
+    last_error = ""
     for attempt in range(2):
         try:
             response = await llm.ainvoke(messages)
             return parse_llm_json(response.content), response.content
         except Exception as exc:
+            last_error = f"[ERROR] {type(exc).__name__}: {exc}"
             if attempt == 0:
                 logger.warning("[llm_reviewer] Attempt 1 failed (%s), retrying...", exc)
                 await asyncio.sleep(2)
             else:
                 logger.error("[llm_reviewer] Batch skipped after 2 failures: %s", exc)
-                return [], ""
 
-    return [], ""
+    return [], last_error
 
 
 # ── public API ────────────────────────────────────────────────────────────────

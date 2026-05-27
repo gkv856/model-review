@@ -26,10 +26,29 @@ export function usePipelineData(props: IUsePipelineData) {
       ])
     )
   )
+  const [firstPollDone, setFirstPollDone] = useState(false)
 
-  // Track which files we've already fetched so we don't re-fetch
-  const fetchedFiles = useRef<Set<string>>(new Set())
-  const pollingRef   = useRef<ReturnType<typeof setInterval> | null>(null)
+  const fetchedFiles  = useRef<Set<string>>(new Set())
+  const pollingRef    = useRef<ReturnType<typeof setInterval> | null>(null)
+  const firstPollRef  = useRef(false)
+
+  const checkLlmErrors = async (stepId: string) => {
+    if (stepId !== "11") return
+    try {
+      const res = await fetch(`/api/interim/${jobId}/11_llm_prompts.json`)
+      if (!res.ok) return
+      const prompts = (await res.json()) as Array<{ raw_response?: string }>
+      const errored = prompts.find((p) => p.raw_response?.startsWith("[ERROR]"))
+      if (errored) {
+        setStepData((prev) => ({
+          ...prev,
+          "11": { ...prev["11"], status: "failed", error: errored.raw_response },
+        }))
+      }
+    } catch {
+      // ignore — prompts file may not exist yet
+    }
+  }
 
   const fetchFile = async (stepId: string, filename: string, sizeBytes: number) => {
     if (fetchedFiles.current.has(filename)) return
@@ -54,8 +73,10 @@ export function usePipelineData(props: IUsePipelineData) {
         ...prev,
         [stepId]: { status: "ready", headers, rows, stats, sizeBytes },
       }))
+
+      // After step 11 loads, check whether any LLM batch returned an error
+      checkLlmErrors(stepId)
     } catch {
-      // Revert to pending so it can be retried next poll
       fetchedFiles.current.delete(filename)
       setStepData((prev) => ({
         ...prev,
@@ -76,6 +97,11 @@ export function usePipelineData(props: IUsePipelineData) {
           fetchFile(step.id, file.name, file.size_bytes)
         }
       }
+
+      if (!firstPollRef.current) {
+        firstPollRef.current = true
+        setFirstPollDone(true)
+      }
     } catch {
       // Swallow — next tick will retry
     }
@@ -83,27 +109,38 @@ export function usePipelineData(props: IUsePipelineData) {
 
   useEffect(() => {
     poll()
-
     pollingRef.current = setInterval(poll, 2000)
-
     return () => {
       if (pollingRef.current) clearInterval(pollingRef.current)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jobId])
 
-  // Stop polling once all files are loaded (works for both live and past runs)
+  // Stop polling: all files loaded (ready or failed), or job ended (give 4s to catch stragglers)
   useEffect(() => {
-    const allReady = PIPELINE_STEPS.every(
-      (s) => stepData[s.id]?.status === "ready"
-    )
+    const allReady = PIPELINE_STEPS.every((s) => {
+      const st = stepData[s.id]?.status
+      return st === "ready" || st === "failed"
+    })
     if (allReady && pollingRef.current) {
       clearInterval(pollingRef.current)
       pollingRef.current = null
+      return
     }
-  }, [stepData])
+    if (jobComplete && firstPollDone && pollingRef.current) {
+      const timer = setTimeout(() => {
+        if (pollingRef.current) {
+          clearInterval(pollingRef.current)
+          pollingRef.current = null
+        }
+      }, 4000)
+      return () => clearTimeout(timer)
+    }
+  }, [stepData, jobComplete, firstPollDone])
 
-  const readyCount = PIPELINE_STEPS.filter((s) => stepData[s.id]?.status === "ready").length
+  const readyCount  = PIPELINE_STEPS.filter((s) => stepData[s.id]?.status === "ready").length
+  const failedCount = PIPELINE_STEPS.filter((s) => stepData[s.id]?.status === "failed").length
+  const loadedCount = readyCount + failedCount
 
-  return { stepData, readyCount, total: PIPELINE_STEPS.length }
+  return { stepData, readyCount, loadedCount, failedCount, total: PIPELINE_STEPS.length, firstPollDone }
 }
