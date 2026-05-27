@@ -51,17 +51,17 @@
 :root {
   /* Force dark mode — all tokens set to dark values */
   --background: oklch(0.10 0 0);
-  --foreground: oklch(0.95 0 0);
+  --foreground: oklch(0.97 0 0);
   --card: oklch(0.15 0 0);
-  --card-foreground: oklch(0.95 0 0);
+  --card-foreground: oklch(0.97 0 0);
   --popover: oklch(0.15 0 0);
-  --popover-foreground: oklch(0.95 0 0);
+  --popover-foreground: oklch(0.97 0 0);
   --primary: oklch(0.60 0.18 250);
   --primary-foreground: oklch(0.98 0 0);
   --secondary: oklch(0.22 0 0);
   --secondary-foreground: oklch(0.95 0 0);
   --muted: oklch(0.20 0 0);
-  --muted-foreground: oklch(0.60 0 0);
+  --muted-foreground: oklch(0.68 0 0);
   --accent: oklch(0.22 0 0);
   --accent-foreground: oklch(0.95 0 0);
   --destructive: oklch(0.60 0.22 27);
@@ -100,9 +100,14 @@
   }
   body {
     @apply bg-background text-foreground;
+    font-optical-sizing: auto;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    -webkit-font-smoothing: antialiased;
+    letter-spacing: -0.01em;
   }
   html {
     @apply font-sans;
+    font-size: 15px;
   }
 }
 
